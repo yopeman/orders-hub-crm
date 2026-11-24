@@ -61,7 +61,7 @@ function dueInfo(lead: LeadT, today: string) {
 
 /* ---------------- theme ---------------- */
 
-type Theme = "light" | "dark" | "system";
+type Theme = "light" | "dark" | "night" | "system";
 
 function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>("system");
@@ -77,7 +77,7 @@ function ThemeToggle() {
   };
   return (
     <div className="seg" role="group" aria-label="Theme">
-      {(["light", "dark", "system"] as Theme[]).map((t) => (
+      {(["light", "dark", "night", "system"] as Theme[]).map((t) => (
         <button key={t} aria-pressed={theme === t} onClick={() => apply(t)}>
           {t[0].toUpperCase() + t.slice(1)}
         </button>

@@ -36,6 +36,21 @@
   color-scheme: dark;
 }
 
+:root[data-theme="night"] {
+  --bg: #000000;
+  --surface: #0d0d0f;
+  --surface-2: #161619;
+  --text: #ffffff;
+  --muted: #9e9ea6;
+  --border: #242428;
+  --brand-soft: rgba(242, 92, 5, 0.22);
+  --ok: #4ad08a;
+  --warn: #f0b955;
+  --danger: #ff7a7a;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 8px 24px rgba(0, 0, 0, 0.8);
+  color-scheme: dark;
+}
+
 @media (prefers-color-scheme: dark) {
   :root[data-theme="system"] {
     --bg: #17110c;
