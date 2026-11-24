@@ -22,7 +22,25 @@ interface LeadT {
   followUpDate: string | null;
   notes: string;
   activity: Activity[];
+  createdAt?: string;
+  updatedAt?: string;
 }
+
+type SortField = "name" | "createdAt" | "updatedAt";
+type SortOrder = "desc" | "asc";
+
+const getTime = (dateStr?: string | null, idFallback?: string): number => {
+  if (dateStr) {
+    const t = new Date(dateStr).getTime();
+    if (!isNaN(t)) return t;
+  }
+  if (idFallback && idFallback.length >= 8) {
+    const hex = idFallback.substring(0, 8);
+    const secs = parseInt(hex, 16);
+    if (!isNaN(secs)) return secs * 1000;
+  }
+  return 0;
+};
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const todayStr = () => {
@@ -249,6 +267,9 @@ export default function Page() {
   const [q, setQ] = useState("");
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [due, setDue] = useState<DueFilter>("all");
+  const [followUpDate, setFollowUpDate] = useState<string>("");
+  const [sortBy, setSortBy] = useState<SortField>("createdAt");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [modal, setModal] = useState<{ lead: LeadT | null; log: boolean } | null>(null);
   const [today, setToday] = useState("");
 
@@ -365,13 +386,15 @@ export default function Page() {
 
   const visible = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return leads.filter((l) => {
+    const filtered = leads.filter((l) => {
       if (stageFilter !== "all" && l.stage !== stageFilter) return false;
       if (needle) {
         const hay = [l.name, l.business, l.phone, l.email, l.social, l.nextAction, l.notes].join(" ").toLowerCase();
         if (!hay.includes(needle)) return false;
       }
-      if (due !== "all" && today) {
+      if (followUpDate) {
+        if (!l.followUpDate || dayPart(l.followUpDate) !== followUpDate) return false;
+      } else if (due !== "all" && today) {
         if (stageByKey(l.stage).closed || !l.followUpDate) return false;
         const d = diffDays(dayPart(l.followUpDate), today);
         if (due === "overdue" && d >= 0) return false;
@@ -380,9 +403,35 @@ export default function Page() {
       }
       return true;
     });
-  }, [leads, q, stageFilter, due, today]);
 
-  const toggleDue = (v: DueFilter) => setDue((p) => (p === v ? "all" : v));
+    return filtered.sort((a, b) => {
+      let cmp = 0;
+      if (sortBy === "name") {
+        cmp = a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
+      } else if (sortBy === "createdAt") {
+        cmp = getTime(a.createdAt, a._id) - getTime(b.createdAt, b._id);
+      } else if (sortBy === "updatedAt") {
+        const ta = getTime(a.updatedAt) || getTime(a.createdAt, a._id);
+        const tb = getTime(b.updatedAt) || getTime(b.createdAt, b._id);
+        cmp = ta - tb;
+      }
+      return sortOrder === "asc" ? cmp : -cmp;
+    });
+  }, [leads, q, stageFilter, followUpDate, due, today, sortBy, sortOrder]);
+
+  const toggleDue = (v: DueFilter) => {
+    setFollowUpDate("");
+    setDue((p) => (p === v ? "all" : v));
+  };
+
+  const handleSort = (field: SortField) => {
+    if (sortBy === field) {
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(field);
+      setSortOrder(field === "name" ? "asc" : "desc");
+    }
+  };
 
   return (
     <main className="wrap">
@@ -428,11 +477,54 @@ export default function Page() {
 
       <div className="filters">
         <input type="search" placeholder="Search name, business, phone, notes…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search leads" />
-        <select value={due} onChange={(e) => setDue(e.target.value as DueFilter)} aria-label="Follow-up filter">
+        <select
+          value={due}
+          onChange={(e) => {
+            setDue(e.target.value as DueFilter);
+            if (e.target.value !== "all") setFollowUpDate("");
+          }}
+          aria-label="Follow-up preset filter"
+        >
           <option value="all">Any follow-up date</option>
           <option value="overdue">Overdue</option>
           <option value="today">Due today</option>
           <option value="week">Next 7 days</option>
+        </select>
+        <div className="filter-group">
+          <label className="filter-label">
+            Follow-up:
+            <input
+              type="date"
+              value={followUpDate}
+              onChange={(e) => {
+                setFollowUpDate(e.target.value);
+                if (e.target.value) setDue("all");
+              }}
+              aria-label="Filter by exact follow-up date"
+              title="Filter by follow-up date"
+            />
+          </label>
+          {followUpDate && (
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => setFollowUpDate("")}
+              title="Clear date filter"
+              aria-label="Clear date filter"
+              style={{ padding: "4px 8px" }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value as SortField)} aria-label="Sort by">
+          <option value="createdAt">Sort: Created at</option>
+          <option value="updatedAt">Sort: Updated at</option>
+          <option value="name">Sort: Name</option>
+        </select>
+        <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as SortOrder)} aria-label="Sort direction">
+          <option value="desc">Desc</option>
+          <option value="asc">Asc</option>
         </select>
       </div>
 
@@ -441,7 +533,13 @@ export default function Page() {
           <table>
             <thead>
               <tr>
-                <th>Lead</th>
+                <th
+                  onClick={() => handleSort("name")}
+                  style={{ cursor: "pointer", userSelect: "none" }}
+                  title="Click to sort by Name"
+                >
+                  Lead {sortBy === "name" && (sortOrder === "asc" ? "▲" : "▼")}
+                </th>
                 <th>Stage</th>
                 <th>Last contact</th>
                 <th>Next action</th>
@@ -458,6 +556,15 @@ export default function Page() {
                     <td>
                       <button className="name" onClick={() => setModal({ lead: l, log: false })}>{l.name}</button>
                       <div className="muted">{[l.business, l.phone].filter(Boolean).join(" · ")}</div>
+                      {sortBy === "updatedAt" && l.updatedAt ? (
+                        <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+                          Updated {fmt(dayPart(l.updatedAt))}
+                        </div>
+                      ) : l.createdAt ? (
+                        <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+                          Created {fmt(dayPart(l.createdAt))}
+                        </div>
+                      ) : null}
                     </td>
                     <td>
                       <select className="stage-select" value={l.stage} onChange={(e) => quickStage(l, e.target.value)} aria-label={`Stage for ${l.name}`}>
